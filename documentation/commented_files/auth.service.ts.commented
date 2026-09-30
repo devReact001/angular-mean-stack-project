@@ -1,0 +1,505 @@
+/**
+ * ========================================
+ * ANGULAR AUTH SERVICE - COMPLETE GUIDE
+ * ========================================
+ *
+ * This file handles all authentication logic:
+ * - Login (send credentials to backend)
+ * - Register (create new account)
+ * - Logout (clear token)
+ * - Token management
+ *
+ * Think of this service like a "bouncer" at a club:
+ * - Keeps track of who's logged in (tokens)
+ * - Lets people login/logout
+ * - Checks if person is authorized
+ */
+
+// ============================================
+// 1. IMPORTS - Bring in Angular tools
+// ============================================
+
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { BehaviorSubject, Observable } from 'rxjs';
+import { tap, catchError } from 'rxjs/operators';
+import { of } from 'rxjs';
+
+// Explanation of imports:
+// - Injectable: Decorator that makes this class available for injection
+// - HttpClient: Tool to make HTTP requests (GET, POST, etc)
+// - BehaviorSubject: Stores current value and notifies when it changes
+// - Observable: Represents data that arrives in the future
+// - tap: Operator that runs side effects (like localStorage)
+// - catchError: Operator that handles errors
+// - of: Creates Observable from value
+
+// ============================================
+// 2. SERVICE DECORATOR
+// ============================================
+
+/**
+ * @Injectable({ providedIn: 'root' })
+ *
+ * This means:
+ * - "providedIn: 'root'" = Available to entire app
+ * - Only ONE instance is created and reused
+ * - Any component that needs it gets the SAME instance
+ *
+ * Alternative: Add to AppModule providers array
+ */
+@Injectable({
+  providedIn: 'root'
+})
+
+// ============================================
+// 3. SERVICE CLASS
+// ============================================
+
+export class AuthService {
+
+  // ==========================================
+  // 3.1 PROPERTIES (Data that service holds)
+  // ==========================================
+
+  /**
+   * BehaviorSubject: A special Observable that:
+   * 1. Always has a current value
+   * 2. Sends that value to new subscribers
+   * 3. Notifies all subscribers when value changes
+   *
+   * Example:
+   * - User logs in → value changes from null to User object
+   * - All components subscribed get notified immediately
+   */
+  private currentUser$ = new BehaviorSubject<any>(null);
+
+  /**
+   * isAuthenticated$: Observable showing login status
+   *
+   * Why Observable?
+   * - Components can subscribe to know when login status changes
+   * - Real-time updates without polling
+   * - Multiple components stay in sync
+   */
+  private isAuthenticated$ = new BehaviorSubject<boolean>(false);
+
+  /**
+   * loading$: Track if authentication is in progress
+   *
+   * Used for:
+   * - Showing "Loading..." text during login
+   * - Disabling buttons while request is happening
+   * - Better UX feedback
+   */
+  private loading$ = new BehaviorSubject<boolean>(false);
+
+  /**
+   * API base URL
+   *
+   * In real app, this comes from environment.ts:
+   * apiUrl: string = environment.apiUrl;
+   *
+   * Benefits:
+   * - Easy to change for different environments
+   * - Dev: http://localhost:3000
+   * - Prod: https://api.example.com
+   */
+  private apiUrl = 'http://localhost:3000/api';
+
+  // ==========================================
+  // 3.2 CONSTRUCTOR (Dependency Injection)
+  // ==========================================
+
+  /**
+   * Constructor: Asks Angular for dependencies
+   *
+   * Example:
+   * constructor(private http: HttpClient) {}
+   *
+   * What happens:
+   * 1. Angular sees "need HttpClient"
+   * 2. Angular creates HttpClient instance
+   * 3. Passes it to this service
+   * 4. "private" = Can only use within this class
+   *
+   * Why use Dependency Injection?
+   * - Loose coupling (easy to change HttpClient later)
+   * - Easy to test (can provide fake HttpClient)
+   * - Angular manages lifecycle
+   */
+  constructor(private http: HttpClient) {
+    // When service is created:
+    // 1. Check if token exists in localStorage
+    this.checkToken();
+  }
+
+  // ==========================================
+  // 3.3 CHECK TOKEN (On app startup)
+  // ==========================================
+
+  /**
+   * checkToken(): Run when app starts
+   *
+   * Purpose: Check if user already has valid token
+   *
+   * Scenario:
+   * 1. User logs in (token saved to localStorage)
+   * 2. User refreshes page (app restarts)
+   * 3. checkToken() runs
+   * 4. Token still exists in localStorage
+   * 5. User stays logged in ✓
+   */
+  private checkToken(): void {
+    // Get token from browser storage
+    const token = localStorage.getItem('token');
+
+    // If token exists, user is logged in
+    if (token) {
+      this.isAuthenticated$.next(true);
+
+      // Optional: Fetch current user data
+      // this.getCurrentUser();
+    }
+  }
+
+  // ==========================================
+  // 3.4 LOGIN METHOD
+  // ==========================================
+
+  /**
+   * login(email: string, password: string): Observable<any>
+   *
+   * What this does:
+   * 1. Sends email and password to backend
+   * 2. Backend checks credentials in database
+   * 3. If correct → returns token and user data
+   * 4. If wrong → returns error
+   *
+   * How it's called from component:
+   * this.authService.login('user@example.com', 'password123')
+   *   .subscribe(
+   *     (response) => { ... success ... },
+   *     (error) => { ... error ... }
+   *   );
+   */
+  login(email: string, password: string): Observable<any> {
+
+    // Show loading spinner
+    this.loading$.next(true);
+
+    // Make HTTP POST request to backend
+    // POST /api/auth/login
+    // Body: { email: "...", password: "..." }
+    return this.http.post(`${this.apiUrl}/auth/login`, { email, password })
+      .pipe(
+        // tap: Run side effects (don't change data)
+        tap((response) => {
+          // Save token to localStorage
+          // Token is like a "hall pass" for future requests
+          localStorage.setItem('token', response.token);
+
+          // Save user info (name, email, etc)
+          localStorage.setItem('user', JSON.stringify(response.user));
+
+          // Update service state
+          // All components subscribed to currentUser$ get notified
+          this.currentUser$.next(response.user);
+          this.isAuthenticated$.next(true);
+          this.loading$.next(false);
+        }),
+
+        // catchError: Handle if request fails
+        catchError((error) => {
+          // Log error (helpful for debugging)
+          console.error('Login failed:', error);
+
+          // Stop showing loading spinner
+          this.loading$.next(false);
+
+          // Re-throw error so component knows login failed
+          throw error;
+        })
+      );
+  }
+
+  // ==========================================
+  // 3.5 REGISTER METHOD
+  // ==========================================
+
+  /**
+   * register(userData): Create new account
+   *
+   * Similar to login but:
+   * - Sends more data (name, email, password)
+   * - Endpoint is /auth/register
+   * - After success, user still needs to login
+   */
+  register(userData: { email: string; password: string; name: string }): Observable<any> {
+    this.loading$.next(true);
+
+    return this.http.post(`${this.apiUrl}/auth/register`, userData)
+      .pipe(
+        tap((response) => {
+          // Optional: Auto-login after registration
+          // localStorage.setItem('token', response.token);
+
+          this.loading$.next(false);
+        }),
+        catchError((error) => {
+          console.error('Registration failed:', error);
+          this.loading$.next(false);
+          throw error;
+        })
+      );
+  }
+
+  // ==========================================
+  // 3.6 LOGOUT METHOD
+  // ==========================================
+
+  /**
+   * logout(): Clear authentication
+   *
+   * What this does:
+   * 1. Removes token from localStorage
+   * 2. Clears user data
+   * 3. Updates service state
+   * 4. Components get notified
+   * 5. Router navigates to login
+   *
+   * This doesn't need HTTP request because:
+   * - Token is already local (in browser)
+   * - Backend doesn't need to know we logged out
+   * - Next request won't include token
+   */
+  logout(): void {
+    // Delete token
+    localStorage.removeItem('token');
+
+    // Delete user info
+    localStorage.removeItem('user');
+
+    // Update service state
+    this.currentUser$.next(null);
+    this.isAuthenticated$.next(false);
+  }
+
+  // ==========================================
+  // 3.7 GETTER METHODS (Observable streams)
+  // ==========================================
+
+  /**
+   * Getters expose Observables to components
+   *
+   * Components use them like:
+   * this.authService.isAuthenticated$
+   *   .subscribe(isAuth => {
+   *     this.isLoggedIn = isAuth;
+   *   });
+   *
+   * Or in template with async pipe:
+   * <p *ngIf="authService.isAuthenticated$ | async">
+   *   You are logged in!
+   * </p>
+   */
+
+  /**
+   * Get current user Observable
+   *
+   * Why Observable?
+   * - Multiple components need user data
+   * - When user logs in/out, all get notified
+   * - No need for polling or manual updates
+   */
+  getCurrentUser(): Observable<any> {
+    return this.currentUser$.asObservable();
+  }
+
+  /**
+   * Get authentication status Observable
+   *
+   * Used by:
+   * - Auth guard (to protect routes)
+   * - Components (to show/hide login button)
+   */
+  getIsAuthenticated(): Observable<boolean> {
+    return this.isAuthenticated$.asObservable();
+  }
+
+  /**
+   * Get loading status Observable
+   *
+   * Used by:
+   * - Login component (to show "Loading..." text)
+   * - Buttons (to disable during request)
+   */
+  getLoading(): Observable<boolean> {
+    return this.loading$.asObservable();
+  }
+
+  /**
+   * Quick method to check if currently logged in
+   *
+   * Returns: boolean (true/false)
+   *
+   * Used by:
+   * - Auth guard: canActivate(): boolean { return this.isLoggedIn(); }
+   * - Header: *ngIf="authService.isLoggedIn()"
+   *
+   * Note: This is synchronous (immediate)
+   * Use getIsAuthenticated() for reactive updates
+   */
+  isLoggedIn(): boolean {
+    return !!localStorage.getItem('token');
+
+    // Explanation of !!:
+    // ! = NOT operator (converts to boolean)
+    // !! = NOT NOT (converts to boolean twice = actual boolean)
+    // Examples:
+    // 'token-string' → !!  'token-string' → true
+    // null → !! null → false
+  }
+
+  // ==========================================
+  // 3.8 TOKEN MANAGEMENT
+  // ==========================================
+
+  /**
+   * getToken(): Get stored JWT token
+   *
+   * JWT = JSON Web Token
+   * It's like a "membership card" that proves you're logged in
+   *
+   * Used by:
+   * - HTTP Interceptor (adds to all requests)
+   * - Manual requests that need authorization
+   */
+  getToken(): string | null {
+    return localStorage.getItem('token');
+  }
+
+  /**
+   * isTokenExpired(): Check if token is outdated
+   *
+   * JWT tokens have an expiration time
+   * After expiration, they're invalid
+   *
+   * Advanced: Decode JWT and check exp field
+   * For now: Assume valid if exists in localStorage
+   */
+  isTokenExpired(): boolean {
+    const token = this.getToken();
+
+    if (!token) return true; // No token = expired
+
+    // Advanced: Decode and check expiration
+    // For now, just check if it exists
+    return false;
+  }
+
+  // ==========================================
+  // 3.9 USAGE EXAMPLES
+  // ==========================================
+
+  /**
+   * Example 1: Login in component
+   *
+   * login.component.ts:
+   *
+   * constructor(private authService: AuthService) {}
+   *
+   * login() {
+   *   this.authService.login(this.email, this.password)
+   *     .subscribe(
+   *       (response) => {
+   *         // Success
+   *         this.router.navigate(['/dashboard']);
+   *       },
+   *       (error) => {
+   *         // Error
+   *         this.errorMessage = 'Invalid credentials';
+   *       }
+   *     );
+   * }
+   */
+
+  /**
+   * Example 2: Show login status in header
+   *
+   * header.component.ts:
+   *
+   * isLoggedIn$ = this.authService.getIsAuthenticated();
+   *
+   * header.component.html:
+   *
+   * <button *ngIf="!(isLoggedIn$ | async)">Login</button>
+   * <button *ngIf="isLoggedIn$ | async" (click)="logout()">
+   *   Logout
+   * </button>
+   */
+
+  /**
+   * Example 3: Guard protected routes
+   *
+   * auth.guard.ts:
+   *
+   * canActivate(): boolean {
+   *   if (this.authService.isLoggedIn()) {
+   *     return true; // Allow access
+   *   } else {
+   *     this.router.navigate(['/login']);
+   *     return false; // Deny access
+   *   }
+   * }
+   */
+}
+
+/**
+ * ========================================
+ * SUMMARY OF KEY CONCEPTS
+ * ========================================
+ *
+ * 1. SERVICE: Encapsulates authentication logic
+ * 2. OBSERVABLE: Allows reactive updates across app
+ * 3. DEPENDENCY INJECTION: Angular provides HTTP client
+ * 4. HTTP REQUESTS: Communication with backend
+ * 5. LOCAL STORAGE: Persist token in browser
+ * 6. ERROR HANDLING: catchError for failed requests
+ * 7. SIDE EFFECTS: tap for storing data
+ *
+ * FLOW:
+ * Component → Service → HTTP → Backend → Response
+ *         → localStorage → Other Components
+ */
+
+/**
+ * ========================================
+ * COMMON MISTAKES & HOW TO AVOID THEM
+ * ========================================
+ *
+ * ❌ Mistake 1: Not unsubscribing
+ * Component subscribes but never unsubscribes
+ * Result: Memory leak, component stays in memory
+ *
+ * ✅ Fix: Use OnDestroy lifecycle hook
+ * ngOnDestroy() { this.subscription.unsubscribe(); }
+ *
+ * ---
+ *
+ * ❌ Mistake 2: Forgetting to import HttpClientModule
+ * service uses HttpClient but module not imported
+ * Result: "NullInjectorError: No provider for HttpClient"
+ *
+ * ✅ Fix: Import in AppModule
+ * imports: [HttpClientModule]
+ *
+ * ---
+ *
+ * ❌ Mistake 3: Not using tap() for side effects
+ * Trying to update state outside of Observable
+ * Result: Race conditions, state inconsistencies
+ *
+ * ✅ Fix: Use tap() operator
+ * .pipe(tap((response) => { this.state = response; }))
+ */

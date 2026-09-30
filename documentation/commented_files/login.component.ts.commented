@@ -1,0 +1,654 @@
+/**
+ * ========================================
+ * LOGIN COMPONENT - COMPLETE GUIDE
+ * ========================================
+ *
+ * This component shows the login page
+ * It handles:
+ * - Form input (email, password)
+ * - Form submission (button click)
+ * - Communicating with AuthService
+ * - Showing error messages
+ * - Navigating after login
+ *
+ * Think of this component like a restaurant:
+ * - Component = The restaurant
+ * - AuthService = The kitchen
+ * - Form = Order from customer
+ * - Login = Customer gets food
+ */
+
+// ============================================
+// 1. IMPORTS - Bring in Angular tools
+// ============================================
+
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Router } from '@angular/router';
+import { AuthService } from '../../services/auth.service';
+import { Subscription } from 'rxjs';
+
+/**
+ * Imports explained:
+ *
+ * Component: Decorator that turns class into component
+ * OnInit: Lifecycle hook (runs when component created)
+ * OnDestroy: Lifecycle hook (runs when component destroyed)
+ * Router: Used to navigate to other pages
+ * AuthService: Service that handles login logic
+ * Subscription: Used to manage Observable subscriptions
+ */
+
+// ============================================
+// 2. COMPONENT DECORATOR
+// ============================================
+
+@Component({
+  // selector: How to use this component in HTML
+  // <app-login></app-login>
+  selector: 'app-login',
+
+  // templateUrl: Path to HTML file for this component
+  templateUrl: './login.component.html',
+
+  // styleUrls: Array of CSS files for this component
+  styleUrls: ['./login.component.css']
+})
+
+// ============================================
+// 3. COMPONENT CLASS
+// ============================================
+
+/**
+ * Implements OnInit, OnDestroy:
+ * - OnInit: Must have ngOnInit() method
+ * - OnDestroy: Must have ngOnDestroy() method
+ *
+ * Why implement these?
+ * - Tells TypeScript "I promise to have these methods"
+ * - Helps catch mistakes (if you forget method, error)
+ * - Clear contract about what component does
+ */
+export class LoginComponent implements OnInit, OnDestroy {
+
+  // ========================================
+  // 3.1 COMPONENT PROPERTIES (Like React state)
+  // ========================================
+
+  /**
+   * email: string
+   *
+   * Stores email entered in input field
+   * Two-way binding: [(ngModel)]="email"
+   * - User types → email updates
+   * - email changes → input updates
+   */
+  email: string = '';
+
+  /**
+   * password: string
+   *
+   * Stores password entered in input field
+   * Same as email, but sensitive data
+   */
+  password: string = '';
+
+  /**
+   * errorMessage: string
+   *
+   * Shows error to user if login fails
+   * Example: "Invalid email or password"
+   *
+   * In HTML: <div *ngIf="errorMessage">{{ errorMessage }}</div>
+   * Shows only if errorMessage has text
+   */
+  errorMessage: string = '';
+
+  /**
+   * isLoading: boolean
+   *
+   * True while login request is happening
+   * Used to:
+   * - Show "Loading..." text
+   * - Disable button so user can't click twice
+   *
+   * Example:
+   * <button [disabled]="isLoading">
+   *   {{ isLoading ? 'Logging in...' : 'Login' }}
+   * </button>
+   */
+  isLoading: boolean = false;
+
+  /**
+   * subscription: Subscription
+   *
+   * Tracks our login request Observable
+   * Need this to unsubscribe later (prevent memory leak)
+   *
+   * When component destroys:
+   * ngOnDestroy() { this.subscription.unsubscribe(); }
+   */
+  private subscription: Subscription;
+
+  // ========================================
+  // 3.2 CONSTRUCTOR (Dependency Injection)
+  // ========================================
+
+  /**
+   * constructor(
+   *   private authService: AuthService,
+   *   private router: Router
+   * ) {}
+   *
+   * We ask Angular for:
+   * - authService: To call login() method
+   * - router: To navigate after login
+   *
+   * "private" = Only available in this component
+   * Used like: this.authService.login(...)
+   */
+  constructor(
+    private authService: AuthService,
+    private router: Router
+  ) {}
+
+  // ========================================
+  // 3.3 LIFECYCLE HOOK: ngOnInit
+  // ========================================
+
+  /**
+   * ngOnInit(): Runs ONCE when component is created
+   *
+   * Think of it like a constructor:
+   * - Set up initial data
+   * - Make first API calls
+   * - Subscribe to data
+   *
+   * WHEN it runs:
+   * 1. User navigates to /login
+   * 2. LoginComponent is created
+   * 3. Constructor runs
+   * 4. ngOnInit() runs (after constructor)
+   * 5. Template renders
+   * 6. Page shows
+   */
+  ngOnInit(): void {
+    // Check if already logged in
+    if (this.authService.isLoggedIn()) {
+      // User already logged in, go to dashboard
+      this.router.navigate(['/dashboard']);
+    }
+
+    // Could also:
+    // - Load preferences
+    // - Subscribe to events
+    // - Fetch initial data
+  }
+
+  // ========================================
+  // 3.4 MAIN METHOD: HANDLE LOGIN
+  // ========================================
+
+  /**
+   * login(): Called when user clicks "Login" button
+   *
+   * Steps:
+   * 1. Validate form (email, password not empty)
+   * 2. Show loading spinner
+   * 3. Call AuthService.login()
+   * 4. If success: Navigate to dashboard
+   * 5. If error: Show error message
+   *
+   * FLOW:
+   * User clicks button
+   *   ↓
+   * (click)="login()" in HTML triggers
+   *   ↓
+   * login() method runs
+   *   ↓
+   * authService.login() makes HTTP request
+   *   ↓
+   * subscribe() waits for response
+   *   ↓
+   * Success or error callback runs
+   */
+  login(): void {
+
+    // ===== STEP 1: Clear previous errors =====
+
+    /**
+     * If user tried to login before and got error,
+     * clear old error message
+     *
+     * Example:
+     * - First try: Wrong password → Show error
+     * - Second try: Should clear that error
+     */
+    this.errorMessage = '';
+
+    // ===== STEP 2: Validate form inputs =====
+
+    /**
+     * Check email and password are not empty
+     *
+     * Why validate on frontend?
+     * - Better UX (quick feedback)
+     * - Less server load
+     *
+     * But backend also validates (security)
+     */
+    if (!this.email || !this.password) {
+      this.errorMessage = 'Please enter email and password';
+      return; // Stop here, don't continue
+    }
+
+    // ===== STEP 3: Validate email format =====
+
+    /**
+     * Simple email validation
+     * Real apps use: email regex or library
+     *
+     * Example regex:
+     * const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+     */
+    if (!this.email.includes('@')) {
+      this.errorMessage = 'Please enter a valid email';
+      return;
+    }
+
+    // ===== STEP 4: Show loading state =====
+
+    /**
+     * Set isLoading = true
+     * This makes:
+     * - Button disabled
+     * - Text changes to "Logging in..."
+     * - User can't click button multiple times
+     */
+    this.isLoading = true;
+
+    // ===== STEP 5: Call service to login =====
+
+    /**
+     * AuthService.login() returns Observable
+     * We subscribe to it
+     *
+     * Observable = Data that arrives in future
+     * Subscribe = "Let me know when it arrives"
+     *
+     * HTTP Request happens here
+     * Frontend sends: { email, password }
+     * Backend checks: Is this valid user?
+     * Backend responds: Token or Error
+     */
+    this.subscription = this.authService
+      .login(this.email, this.password)
+      .subscribe(
+
+        // ===== SUCCESS CALLBACK =====
+
+        /**
+         * (response) => { ... }
+         *
+         * WHEN: Login succeeded, server sent response
+         * response contains:
+         * {
+         *   token: "eyJhbGc...",
+         *   user: { id, email, name },
+         *   message: "Login successful"
+         * }
+         *
+         * AuthService already saved token
+         * So we just need to navigate
+         */
+        (response) => {
+          console.log('Login successful!', response);
+
+          // Hide loading spinner
+          this.isLoading = false;
+
+          // Navigate to dashboard
+          // this.router.navigate() changes URL and shows new page
+          this.router.navigate(['/dashboard']);
+
+          // What happens next:
+          // 1. URL changes to localhost:4200/dashboard
+          // 2. Router loads DashboardComponent
+          // 3. Dashboard shows projects, tasks, etc
+        },
+
+        // ===== ERROR CALLBACK =====
+
+        /**
+         * (error) => { ... }
+         *
+         * WHEN: Login failed (wrong password, user not found, etc)
+         * error contains error details
+         *
+         * HTTP Status codes:
+         * 401 = Unauthorized (wrong password)
+         * 404 = Not Found (user doesn't exist)
+         * 500 = Server error
+         */
+        (error) => {
+          console.error('Login failed:', error);
+
+          // Hide loading spinner
+          this.isLoading = false;
+
+          // Show error message to user
+          if (error.status === 401) {
+            this.errorMessage = 'Invalid email or password';
+          } else if (error.status === 404) {
+            this.errorMessage = 'User not found';
+          } else {
+            this.errorMessage = 'Login failed. Please try again.';
+          }
+
+          // Clear password (for security, don't show password again)
+          this.password = '';
+        }
+      );
+  }
+
+  // ========================================
+  // 3.5 LIFECYCLE HOOK: ngOnDestroy
+  // ========================================
+
+  /**
+   * ngOnDestroy(): Runs when component is destroyed
+   *
+   * When does component get destroyed?
+   * 1. User navigates to another page
+   * 2. Component is no longer needed
+   * 3. Angular removes it from DOM
+   * 4. ngOnDestroy() runs
+   *
+   * WHY ngOnDestroy?
+   * - Clean up resources
+   * - Unsubscribe from Observables
+   * - Prevent memory leaks
+   *
+   * MEMORY LEAK EXAMPLE:
+   * If we DON'T unsubscribe:
+   * 1. User logs in
+   * 2. Component destroyed
+   * 3. But subscription still active
+   * 4. Thousands of subscriptions pile up
+   * 5. App gets slow and crashes
+   *
+   * FIX: Unsubscribe in ngOnDestroy
+   */
+  ngOnDestroy(): void {
+    // Unsubscribe if subscription exists
+    if (this.subscription) {
+      this.subscription.unsubscribe();
+      console.log('Cleaned up login component subscription');
+    }
+  }
+
+  // ========================================
+  // 3.6 OPTIONAL METHODS
+  // ========================================
+
+  /**
+   * Optional: Go to signup page
+   *
+   * Often login page has link: "Don't have account? Sign up"
+   *
+   * goToSignup(): void {
+   *   this.router.navigate(['/signup']);
+   * }
+   *
+   * In template:
+   * <button (click)="goToSignup()">Sign Up</button>
+   */
+
+  /**
+   * Optional: Reset form
+   *
+   * Clear all fields
+   *
+   * resetForm(): void {
+   *   this.email = '';
+   *   this.password = '';
+   *   this.errorMessage = '';
+   * }
+   */
+
+  /**
+   * Optional: Remember email
+   *
+   * Save email to localStorage so user doesn't re-type
+   *
+   * rememberEmail(): void {
+   *   localStorage.setItem('rememberedEmail', this.email);
+   * }
+   */
+}
+
+// ============================================
+// COMPONENT USAGE IN APP
+// ============================================
+
+/**
+ * In app-routing.module.ts:
+ *
+ * const routes: Routes = [
+ *   { path: 'login', component: LoginComponent },
+ *   ...
+ * ];
+ *
+ * In app.component.html:
+ *
+ * <app-login></app-login>
+ * Or through router-outlet:
+ * <router-outlet></router-outlet>
+ */
+
+// ============================================
+// COMPLETE LOGIN FLOW
+// ============================================
+
+/**
+ * 1. USER VISITS PAGE
+ *    URL: localhost:4200/login
+ *    Router loads: LoginComponent
+ *    ngOnInit() runs
+ *    Template renders form
+ *
+ * 2. USER ENTERS DATA
+ *    Clicks in email field
+ *    Types: "user@example.com"
+ *    Two-way binding: this.email = "user@example.com"
+ *
+ *    Clicks in password field
+ *    Types: "password123"
+ *    Two-way binding: this.password = "password123"
+ *
+ * 3. USER CLICKS LOGIN
+ *    HTML: <button (click)="login()">
+ *    Triggers: this.login()
+ *
+ * 4. LOGIN METHOD VALIDATES
+ *    Check: email not empty ✓
+ *    Check: password not empty ✓
+ *    Check: email has @ ✓
+ *
+ *    Set: this.isLoading = true
+ *    Result: Button disabled, text shows "Logging in..."
+ *
+ * 5. SERVICE MAKES REQUEST
+ *    this.authService.login(email, password)
+ *    HTTP POST to: http://localhost:3000/api/auth/login
+ *    Body: { "email": "user@example.com", "password": "password123" }
+ *
+ * 6. BACKEND PROCESSES
+ *    Database query: Find user by email
+ *    Password check: Does hash match?
+ *    Create token: JWT token
+ *    Response: { token: "xyz...", user: {...} }
+ *
+ * 7. SUCCESS CALLBACK
+ *    response arrives
+ *    AuthService saves token to localStorage
+ *    (handled in auth.service.ts tap operator)
+ *
+ *    LoginComponent receives response
+ *    (error) callback doesn't run
+ *    (response) callback runs:
+ *    - console.log('Login successful!')
+ *    - this.isLoading = false
+ *    - this.router.navigate(['/dashboard'])
+ *
+ * 8. NAVIGATION
+ *    URL changes to: localhost:4200/dashboard
+ *    Router loads: DashboardComponent
+ *    LoginComponent destroyed
+ *    ngOnDestroy() runs
+ *    subscription.unsubscribe() cleans up
+ *    DashboardComponent shows
+ *
+ * 9. DASHBOARD LOADED
+ *    User sees their projects
+ *    AuthService has token
+ *    All future requests include token
+ *    Backend validates token for each request
+ *
+ * ===== DONE! User is logged in =====
+ */
+
+// ============================================
+// ERROR SCENARIOS
+// ============================================
+
+/**
+ * ❌ Scenario 1: Wrong password
+ *
+ * What happens:
+ * 1. Backend: Password hash doesn't match
+ * 2. Response: { error: "Invalid credentials", status: 401 }
+ * 3. Component: (error) callback runs
+ * 4. Result: Show "Invalid email or password"
+ * 5. User: Can try again
+ */
+
+/**
+ * ❌ Scenario 2: User doesn't exist
+ *
+ * What happens:
+ * 1. Backend: No user found with that email
+ * 2. Response: { error: "User not found", status: 404 }
+ * 3. Component: (error) callback runs
+ * 4. Result: Show "User not found"
+ * 5. User: Should go to signup page
+ */
+
+/**
+ * ❌ Scenario 3: Server error
+ *
+ * What happens:
+ * 1. Backend: Database connection failed
+ * 2. Response: { error: "Server error", status: 500 }
+ * 3. Component: (error) callback runs
+ * 4. Result: Show "Login failed. Please try again."
+ * 5. User: Should try later
+ */
+
+/**
+ * ❌ Scenario 4: Network error
+ *
+ * What happens:
+ * 1. No response from backend
+ * 2. Error: Network timeout
+ * 3. Component: (error) callback runs
+ * 4. Result: Show "Login failed. Please try again."
+ * 5. User: Should check internet connection
+ */
+
+// ============================================
+// COMMON MISTAKES
+// ============================================
+
+/**
+ * ❌ Mistake 1: Not unsubscribing
+ *
+ * Code:
+ * ngOnInit() {
+ *   this.authService.login(...).subscribe(...);
+ * }
+ * // Missing: ngOnDestroy with unsubscribe
+ *
+ * Result: Memory leak, app gets slow
+ *
+ * Fix:
+ * private subscription: Subscription;
+ *
+ * ngOnInit() {
+ *   this.subscription = this.authService.login(...).subscribe(...);
+ * }
+ *
+ * ngOnDestroy() {
+ *   if (this.subscription) {
+ *     this.subscription.unsubscribe();
+ *   }
+ * }
+ */
+
+/**
+ * ❌ Mistake 2: Using email in template without two-way binding
+ *
+ * HTML:
+ * <input value="{{ email }}" />
+ *
+ * Problem:
+ * - User types in input
+ * - Component property doesn't update
+ * - login() uses old empty email
+ *
+ * Fix:
+ * <input [(ngModel)]="email" />
+ * // Now typing updates component property
+ */
+
+/**
+ * ❌ Mistake 3: Not handling async properly
+ *
+ * Code:
+ * login() {
+ *   const response = this.authService.login(...);
+ *   console.log(response); // undefined!
+ * }
+ *
+ * Problem:
+ * - Observable isn't subscribed
+ * - Response hasn't arrived yet
+ * - Can't use synchronously
+ *
+ * Fix:
+ * login() {
+ *   this.authService.login(...)
+ *     .subscribe(response => {
+ *       console.log(response); // Now it's here!
+ *     });
+ * }
+ */
+
+// ============================================
+// SUMMARY
+// ============================================
+
+/**
+ * LoginComponent is:
+ * - A page that lets users enter credentials
+ * - Calls AuthService to handle login
+ * - Shows errors if login fails
+ * - Navigates to dashboard if login succeeds
+ * - Cleans up resources when destroyed
+ *
+ * Key concepts:
+ * 1. Two-way binding [(ngModel)] = Form sync
+ * 2. Observable subscription = Async handling
+ * 3. Error and success callbacks = Results
+ * 4. ngOnDestroy + unsubscribe = Memory management
+ * 5. Router.navigate() = Page changes
+ */

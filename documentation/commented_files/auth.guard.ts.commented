@@ -1,0 +1,447 @@
+/**
+ * ========================================
+ * ANGULAR AUTH GUARD - COMPLETE GUIDE
+ * ========================================
+ *
+ * Guards are like "security checkpoints" on routes
+ *
+ * Real-world analogy:
+ * - Store: "Kids Section" requires parent supervision
+ * - Router Guard: "Dashboard" requires login
+ *
+ * Before showing dashboard, guard checks:
+ * "Are you logged in?"
+ * - YES → Go to dashboard
+ * - NO → Go to login page
+ */
+
+import { Injectable } from '@angular/core';
+import { Router } from '@angular/router';
+import { CanActivate } from '@angular/router';
+import { AuthService } from '../services/auth.service';
+
+// ============================================
+// IMPORTS EXPLANATION
+// ============================================
+
+/**
+ * Router: Used to navigate to different pages
+ * Example: this.router.navigate(['/login']);
+ *
+ * CanActivate: Interface that makes this a guard
+ * Must implement: canActivate() method
+ *
+ * AuthService: Checks if user is logged in
+ * Used: this.authService.isLoggedIn()
+ */
+
+// ============================================
+// GUARD DECORATOR & INTERFACE
+// ============================================
+
+/**
+ * @Injectable({ providedIn: 'root' })
+ * Makes this guard available app-wide
+ */
+@Injectable({
+  providedIn: 'root'
+})
+
+/**
+ * CanActivate Interface
+ *
+ * This means: "Decide if user can ACTIVATE (view) this route"
+ *
+ * Other guard types:
+ * - CanActivate: Can user view this page?
+ * - CanDeactivate: Can user leave this page?
+ * - CanActivateChild: Can user view children routes?
+ * - CanLoad: Can user load lazy-loaded module?
+ */
+export class AuthGuard implements CanActivate {
+
+  // ==========================================
+  // CONSTRUCTOR (Dependency Injection)
+  // ==========================================
+
+  /**
+   * We need:
+   * - authService: Check if logged in
+   * - router: Navigate to login if not logged in
+   */
+  constructor(
+    private authService: AuthService,
+    private router: Router
+  ) {}
+
+  // ==========================================
+  // MAIN GUARD METHOD
+  // ==========================================
+
+  /**
+   * canActivate(): Decides if user can view route
+   *
+   * Returns: boolean
+   * - true = Allow user to see page
+   * - false = Block user from seeing page
+   *
+   * FLOW:
+   * 1. User tries to navigate to /dashboard
+   * 2. Router: "Is there a guard on this route?"
+   * 3. Yes! Call canActivate()
+   * 4. Guard checks: isLoggedIn()?
+   * 5. If true → Allow access
+   * 6. If false → Redirect to login
+   */
+  canActivate(): boolean {
+
+    // ========================================
+    // STEP 1: Check if user is logged in
+    // ========================================
+
+    /**
+     * isLoggedIn() checks:
+     * 1. Is there a token in localStorage?
+     * 2. Has token been stored? → User logged in
+     * 3. No token? → User logged out
+     */
+    if (this.authService.isLoggedIn()) {
+
+      // =====================================
+      // USER IS LOGGED IN ✓
+      // =====================================
+
+      /**
+       * Scenarios where this is true:
+       *
+       * Scenario 1: User just logged in
+       * - Token saved to localStorage
+       * - Now trying to access dashboard
+       * - Result: Allowed to see dashboard
+       *
+       * Scenario 2: User refreshed page
+       * - Token still in localStorage from before
+       * - Trying to access protected page
+       * - Result: Allowed to stay on page
+       */
+
+      console.log('✓ User is logged in, granting access');
+
+      // Allow access to route
+      return true;
+
+    } else {
+
+      // =====================================
+      // USER IS NOT LOGGED IN ✗
+      // =====================================
+
+      /**
+       * Scenarios where this is false:
+       *
+       * Scenario 1: User never logged in
+       * - No token in localStorage
+       * - Trying to access dashboard
+       * - Result: Redirect to login
+       *
+       * Scenario 2: User token expired
+       * - Token was deleted or invalid
+       * - No token in localStorage
+       * - Trying to access dashboard
+       * - Result: Redirect to login
+       *
+       * Scenario 3: User logged out
+       * - logout() removed token
+       * - No token in localStorage
+       * - Trying to go back to protected page
+       * - Result: Redirect to login
+       */
+
+      console.log('✗ User is not logged in, redirecting to login');
+
+      // Redirect to login page
+      this.router.navigate(['/login']);
+
+      // Block access to route
+      return false;
+    }
+  }
+}
+
+// ============================================
+// HOW TO USE THIS GUARD IN ROUTING
+// ============================================
+
+/**
+ * In app-routing.module.ts:
+ *
+ * import { AuthGuard } from './guards/auth.guard';
+ *
+ * const routes: Routes = [
+ *   {
+ *     path: 'login',
+ *     component: LoginComponent
+ *   },
+ *   {
+ *     path: 'dashboard',
+ *     component: DashboardComponent,
+ *     canActivate: [AuthGuard]  ← Add guard here!
+ *   },
+ *   {
+ *     path: 'projects',
+ *     component: ProjectsComponent,
+ *     canActivate: [AuthGuard]  ← Protect this too!
+ *   }
+ * ];
+ */
+
+// ============================================
+// EXAMPLE: ROUTE PROTECTION IN ACTION
+// ============================================
+
+/**
+ * Example Flow:
+ *
+ * 1. User NOT logged in
+ *    URL: localhost:4200/dashboard
+ *
+ *    Angular Router:
+ *    - "User wants to go to /dashboard"
+ *    - "Is there a guard?"
+ *    - "Yes! Call AuthGuard.canActivate()"
+ *
+ *    AuthGuard:
+ *    - Check: isLoggedIn()?
+ *    - Result: false (no token in localStorage)
+ *    - Redirect: this.router.navigate(['/login']);
+ *    - Return: false
+ *
+ *    Result:
+ *    ✗ User redirected to /login
+ *    ✗ Dashboard page never shown
+ *
+ * ---
+ *
+ * 2. User IS logged in
+ *    URL: localhost:4200/dashboard
+ *    Token in localStorage: "eyJhbGc..."
+ *
+ *    Angular Router:
+ *    - "User wants to go to /dashboard"
+ *    - "Is there a guard?"
+ *    - "Yes! Call AuthGuard.canActivate()"
+ *
+ *    AuthGuard:
+ *    - Check: isLoggedIn()?
+ *    - Result: true (token found in localStorage)
+ *    - No redirect
+ *    - Return: true
+ *
+ *    Result:
+ *    ✓ User allowed to dashboard
+ *    ✓ Dashboard component renders
+ *    ✓ User sees projects, tasks, etc
+ */
+
+// ============================================
+// ADVANCED GUARD EXAMPLE
+// ============================================
+
+/**
+ * More advanced AuthGuard with Observable:
+ *
+ * Sometimes you need async operations (API call)
+ * But canActivate() returns boolean (sync)
+ *
+ * Solution: Return Observable<boolean>
+ *
+ * Example:
+ *
+ * canActivate(): Observable<boolean> {
+ *   return this.authService.getIsAuthenticated()
+ *     .pipe(
+ *       tap(isAuth => {
+ *         if (!isAuth) {
+ *           this.router.navigate(['/login']);
+ *         }
+ *       }),
+ *       map(isAuth => isAuth)
+ *     );
+ * }
+ */
+
+// ============================================
+// GUARD LIFECYCLE
+// ============================================
+
+/**
+ * When is canActivate() called?
+ *
+ * 1. User clicks link to protected page
+ *    <a routerLink="/dashboard">Dashboard</a>
+ *    ↓
+ * 2. Router navigates to /dashboard
+ *    ↓
+ * 3. Router sees canActivate: [AuthGuard]
+ *    ↓
+ * 4. Router calls: authGuard.canActivate()
+ *    ↓
+ * 5. Guard checks if logged in
+ *    ↓
+ * 6. Returns true or false
+ *    ↓
+ * 7. Router allows or blocks navigation
+ *
+ * ---
+ *
+ * canActivate() is called BEFORE component renders
+ * This means:
+ * - Component code doesn't run if guard fails
+ * - Prevents showing private page briefly
+ * - More efficient and secure
+ */
+
+// ============================================
+// COMMON PATTERNS
+// ============================================
+
+/**
+ * Pattern 1: Simple Authentication Guard
+ *
+ * canActivate(): boolean {
+ *   return this.authService.isLoggedIn();
+ * }
+ *
+ * Use: Protect pages that need login
+ */
+
+/**
+ * Pattern 2: Role-based Guard
+ *
+ * canActivate(): boolean {
+ *   const user = this.authService.getUser();
+ *   return user && user.role === 'admin';
+ * }
+ *
+ * Use: Only admins can see admin panel
+ */
+
+/**
+ * Pattern 3: Redirect with Redirect Logic
+ *
+ * canActivate(): boolean {
+ *   if (this.authService.isLoggedIn()) {
+ *     return true;
+ *   } else {
+ *     this.router.navigate(['/login'], {
+ *       queryParams: { returnUrl: this.route.url }
+ *     });
+ *     return false;
+ *   }
+ * }
+ *
+ * Use: Save page user tried to access, redirect after login
+ */
+
+// ============================================
+// ERROR SCENARIOS
+// ============================================
+
+/**
+ * ❌ Error 1: Guard not provided
+ *
+ * Symptom:
+ * "NullInjectorError: No provider for AuthGuard"
+ *
+ * Cause:
+ * Guard created but not added to module
+ *
+ * Fix:
+ * In AppModule:
+ * providers: [AuthGuard]
+ *
+ * Or use: @Injectable({ providedIn: 'root' })
+ */
+
+/**
+ * ❌ Error 2: Guard returns wrong type
+ *
+ * Symptom:
+ * "Type 'Promise<boolean>' is not assignable to type 'boolean'"
+ *
+ * Cause:
+ * Returning Promise instead of boolean
+ *
+ * Fix:
+ * If async: Return Observable<boolean>
+ * If sync: Return boolean
+ */
+
+/**
+ * ❌ Error 3: Redirect loop
+ *
+ * Symptom:
+ * Page keeps redirecting, browser crashes
+ *
+ * Cause:
+ * Even login page has canActivate: [AuthGuard]
+ * If not logged in → redirects to login
+ * But login has guard → redirects to login
+ * Loop!
+ *
+ * Fix:
+ * Only add guard to PROTECTED routes
+ * Leave login without guard
+ */
+
+// ============================================
+// TESTING THE GUARD
+// ============================================
+
+/**
+ * Test 1: Access protected page when logged in
+ *
+ * Steps:
+ * 1. Login (token saved to localStorage)
+ * 2. Navigate to /dashboard
+ * 3. Expected: See dashboard page
+ * 4. Actual: ✓ Saw dashboard
+ */
+
+/**
+ * Test 2: Access protected page when NOT logged in
+ *
+ * Steps:
+ * 1. Clear localStorage (no token)
+ * 2. Navigate to /dashboard directly
+ * 3. Expected: Redirected to /login
+ * 4. Actual: ✓ Redirected to login
+ */
+
+/**
+ * Test 3: Log out and try to stay on protected page
+ *
+ * Steps:
+ * 1. Login (on dashboard)
+ * 2. Click logout button
+ * 3. Expected: Redirected to login
+ * 4. Actual: ✓ Redirected to login
+ */
+
+// ============================================
+// SUMMARY
+// ============================================
+
+/**
+ * Key Points:
+ *
+ * 1. Guards check BEFORE component renders
+ * 2. Return true = allow access
+ * 3. Return false = block access (usually redirect)
+ * 4. Guards protect sensitive pages
+ * 5. Always add guard to protected routes
+ * 6. Keep login page unprotected
+ *
+ * Real-world: Guards = Security at door
+ * Check ID (token) before letting inside (page)
+ */
